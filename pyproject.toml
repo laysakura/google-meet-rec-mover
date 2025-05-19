@@ -1,0 +1,48 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "google-meet-rec-mover"
+version = "0.1.0"
+description = "Google Meetの録画ファイルセットを管理・移動するCLIツール"
+authors = [
+    { name = "Sho Nakatani", email = "sho.nakatani@secdevlab.com" }
+]
+readme = "README.md"
+requires-python = ">=3.8"
+license = { text = "MIT" }
+dependencies = [
+    "click>=8.0.0",
+    "tomli>=2.0.0; python_version < '3.11'",
+]
+
+[project.scripts]
+gmeet-rec-mover = "google_meet_rec_mover.cli:main"
+google-meet-rec-mover = "google_meet_rec_mover.cli:main"
+
+[project.optional-dependencies]
+dev = [
+    "black",
+    "isort",
+    "mypy",
+    "pytest",
+]
+
+[tool.black]
+line-length = 88
+target-version = ["py38"]
+
+[tool.isort]
+profile = "black"
+line_length = 88
+
+[tool.mypy]
+python_version = "3.8"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+
+[tool.pytest]
+testpaths = ["tests"]
