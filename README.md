@@ -7,6 +7,8 @@ Google Meet録画セット（動画・議事録・チャット）を指定した
 - Google Driveから録画セット（動画・議事録・チャット）を検出
 - 最新の録画から順にリスト表示
 - 選択した録画セットを指定した場所に移動
+- 移動先ごとに.gdoc→.docx変換の有無を設定可能（Google Drive同士の移動では変換不要）
+- 録画ファイルに.mp4拡張子がない場合は自動的に追加
 
 ## インストール方法
 
@@ -50,9 +52,21 @@ source_dir = "~/Library/CloudStorage/GoogleDrive-yourname@example.com/マイド�
 
 # 録画セットの移動先一覧
 [destinations]
-python_training = "/Users/yourname/Library/CloudStorage/Box-Box/shared-xxx/ddd"
-personal = "~/Documents/MeetRecordings"
-work = "~/Work/Meetings"
+
+# Box（Google Drive以外）- .docxに変換する
+[destinations.python_training]
+path = "/Users/yourname/Library/CloudStorage/Box-Box/shared-xxx/ddd"
+convert_gdoc = true
+
+# Google Drive - 変換しない
+[destinations.google_drive_dest]
+path = "~/Library/CloudStorage/GoogleDrive-yourname@example.com/マイドライブ/会議録"
+convert_gdoc = false
+
+# ローカルフォルダ - 変換する
+[destinations.personal]
+path = "~/Documents/MeetRecordings"
+convert_gdoc = true
 ```
 
 ## Google API 認証設定
@@ -82,7 +96,8 @@ google-meet-rec-mover/
 ├── credentials.json      # 復号化されたGoogle API認証情報（gitignore対象）
 └── google_meet_rec_mover/
     ├── __init__.py       # パッケージ初期化
-    └── cli.py            # CLIツールのメイン実装
+    ├── cli.py            # CLIツールのメイン実装
+    └── gdoc_converter.py # Google Docs変換機能
 ```
 
 ## 要件
