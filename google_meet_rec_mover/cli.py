@@ -118,7 +118,7 @@ class RecordingSet:
         
         return None
     
-    def move_to(self, destination: Path) -> bool:
+    def move_to(self, destination: Path, convert_gdoc: bool = True) -> bool:
         """録画セットを指定した場所に移動する"""
         # 移動先ディレクトリが存在しない場合は作成
         if not destination.exists():
@@ -139,9 +139,9 @@ class RecordingSet:
         if self.video_path:
             self.ensure_video_extension()
         
-        # 議事録が.gdocの場合は.docxに変換
+        # 議事録が.gdocの場合は設定に基づいて.docxに変換
         original_gdoc_path = None
-        if self.transcript_path and self.transcript_path.suffix.lower() == '.gdoc':
+        if convert_gdoc and self.transcript_path and self.transcript_path.suffix.lower() == '.gdoc':
             logger.info(f"議事録を.docxに変換中: {self.transcript_path}")
             original_gdoc_path = self.transcript_path
             
@@ -217,8 +217,25 @@ class Config:
             
             # 録画セット移動先の設定
             if "destinations" in config_data:
-                self.destinations = {name: Path(os.path.expanduser(path)) 
-                                    for name, path in config_data["destinations"].items()}
+                destinations_config = config_data["destinations"]
+                self.destinations = {}
+                
+                # 新しい形式（詳細設定あり）と古い形式（パスのみ）の両方に対応
+                for name, value in destinations_config.items():
+                    if isinstance(value, dict):
+                        # 新しい形式: {path: "...", convert_gdoc: true/false}
+                        path = os.path.expanduser(value.get("path", ""))
+                        convert_gdoc = value.get("convert_gdoc", True)  # デフォルトはTrue
+                        self.destinations[name] = {
+                            "path": Path(path),
+                            "convert_gdoc": convert_gdoc
+                        }
+                    else:
+                        # 古い形式: "path"
+                        self.destinations[name] = {
+                            "path": Path(os.path.expanduser(value)),
+                            "convert_gdoc": True  # 古い形式ではデフォルトでTrue
+                        }
             
             return True
         except Exception as e:
@@ -234,10 +251,22 @@ source_dir = "~/Library/CloudStorage/GoogleDrive-sho.nakatani@secdevlab.com/マ�
 
 # 録画セットの移動先一覧
 [destinations]
-python_training = "/Users/sho.nakatani/Library/CloudStorage/Box-Box/shared-secdevlab/Python基礎+脆弱性診断研修プログラム"
+
+# Box（Google Drive以外）- .docxに変換する
+[destinations.python_training]
+path = "/Users/sho.nakatani/Library/CloudStorage/Box-Box/shared-secdevlab/Python基礎+脆弱性診断研修プログラム"
+convert_gdoc = true
+
 # 移動先を追加する例:
-# personal = "~/Documents/MeetRecordings"
-# work = "~/Work/Meetings"
+# Google Drive - 変換しない
+# [destinations.google_drive_dest]
+# path = "~/Library/CloudStorage/GoogleDrive-..."
+# convert_gdoc = false
+
+# ローカルフォルダ - 変換する
+# [destinations.local_folder]
+# path = "~/Documents/MeetRecordings"
+# convert_gdoc = true
 """
         # 設定ファイルのディレクトリが存在しない場合は作成
         self.config_path.parent.mkdir(parents=True, exist_ok=True)
@@ -373,12 +402,14 @@ def main(config: str, verbose: bool):
     click.echo("\n📁 移動先一覧:")
     destinations = list(config_manager.destinations.items())
     
-    for i, (name, path) in enumerate(destinations):
-        click.echo(f"{i + 1}. {name}: {path}")
+    for i, (name, config) in enumerate(destinations):
+        convert_status = "変換する" if config["convert_gdoc"] else "変換しない"
+        click.echo(f"{i + 1}. {name}: {config['path']} (.gdoc→.docx: {convert_status})")
     
     # カスタム移動先オプションを追加
     click.echo(f"{len(destinations) + 1}. カスタム移動先を指定")
     
+    dest_config = None
     while True:
         dest_choice = click.prompt("\n移動先の番号を入力してください（0で終了）", type=int)
         
@@ -387,17 +418,29 @@ def main(config: str, verbose: bool):
             return
         
         if 1 <= dest_choice <= len(destinations):
-            dest_name, dest_path = destinations[dest_choice - 1]
+            dest_name, dest_config = destinations[dest_choice - 1]
             break
         elif dest_choice == len(destinations) + 1:
             custom_path = click.prompt("移動先のパスを入力してください")
             dest_path = Path(os.path.expanduser(custom_path))
             dest_name = "カスタム"
+            
+            # カスタム移動先の場合は変換設定を尋ねる
+            convert_gdoc = click.confirm("議事録(.gdoc)を.docxに変換しますか？", default=True)
+            
+            # カスタム設定を作成
+            dest_config = {
+                "path": dest_path,
+                "convert_gdoc": convert_gdoc
+            }
             break
         
         click.echo("無効な選択です。もう一度お試しください。")
     
     # 録画セットを移動
+    dest_path = dest_config["path"]
+    convert_gdoc = dest_config["convert_gdoc"]
+    
     click.echo(f"\n⏳ {selected_set.prefix} を {dest_name} ({dest_path}) に移動しています...")
     
     # 録画ファイルに.mp4拡張子がない場合は追加する通知
@@ -407,17 +450,24 @@ def main(config: str, verbose: bool):
     # .gdocファイルがあるか確認
     has_gdoc = selected_set.transcript_path and selected_set.transcript_path.suffix.lower() == '.gdoc'
     if has_gdoc:
-        click.echo("📄 議事録(.gdoc)を.docxに変換します...")
+        if convert_gdoc:
+            click.echo("📄 議事録(.gdoc)を.docxに変換します...")
+        else:
+            click.echo("📄 議事録(.gdoc)はそのまま移動します...")
     
-    success = selected_set.move_to(dest_path)
+    success = selected_set.move_to(dest_path, convert_gdoc)
     
     if success:
         has_mp4_added = selected_set.video_path and selected_set.video_path.suffix.lower() == '.mp4'
         
-        if has_gdoc and has_mp4_added:
+        if has_gdoc and has_mp4_added and convert_gdoc:
             click.echo("✅ 録画ファイルの拡張子追加、議事録の変換と移動が完了しました！")
-        elif has_gdoc:
+        elif has_gdoc and convert_gdoc:
             click.echo("✅ 議事録の変換と移動が完了しました！")
+        elif has_gdoc and has_mp4_added:
+            click.echo("✅ 録画ファイルの拡張子追加、議事録の移動が完了しました！")
+        elif has_gdoc:
+            click.echo("✅ 議事録の移動が完了しました！")
         elif has_mp4_added:
             click.echo("✅ 録画ファイルの拡張子追加と移動が完了しました！")
         else:
