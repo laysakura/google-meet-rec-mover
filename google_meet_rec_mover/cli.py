@@ -11,7 +11,7 @@ import shutil
 import click
 from pathlib import Path
 from datetime import datetime
-from typing import List, Dict, Optional, Set, Tuple
+from typing import List, Dict, Optional, Set, Tuple, Union
 import logging
 
 # Python 3.11未満ではtomliをインポート、それ以上ではtomllib
@@ -78,6 +78,46 @@ class RecordingSet:
         
         return f"[{', '.join(parts)}]"
     
+    def ensure_video_extension(self) -> Optional[Path]:
+        """録画ファイルに.mp4拡張子がない場合は追加する"""
+        if not self.video_path:
+            return None
+        
+        # すでに.mp4拡張子がある場合は何もしない
+        if self.video_path.suffix.lower() == '.mp4':
+            return self.video_path
+        
+        # 拡張子がない場合は.mp4を追加
+        new_path = self.video_path.with_suffix('.mp4')
+        try:
+            logger.info(f"録画ファイルに.mp4拡張子を追加: {self.video_path} -> {new_path}")
+            self.video_path.rename(new_path)
+            self.video_path = new_path
+            return new_path
+        except Exception as e:
+            logger.error(f"拡張子の追加に失敗: {e}")
+            return self.video_path
+    
+    def convert_transcript_to_docx(self) -> Optional[Path]:
+        """議事録をGDOCからDOCXに変換する"""
+        if not self.transcript_path or self.transcript_path.suffix.lower() != '.gdoc':
+            return None
+        
+        from google_meet_rec_mover.gdoc_converter import GdocConverter
+        
+        try:
+            converter = GdocConverter()
+            docx_path = converter.convert_to_docx(self.transcript_path)
+            
+            if docx_path and docx_path.exists():
+                # 変換に成功したら、transcript_pathを更新
+                self.transcript_path = docx_path
+                return docx_path
+        except Exception as e:
+            logger.error(f"議事録の変換に失敗: {e}")
+        
+        return None
+    
     def move_to(self, destination: Path) -> bool:
         """録画セットを指定した場所に移動する"""
         # 移動先ディレクトリが存在しない場合は作成
@@ -94,6 +134,25 @@ class RecordingSet:
             date_dir.mkdir(parents=True)
         
         success = True
+        
+        # 録画ファイルに.mp4拡張子がない場合は追加
+        if self.video_path:
+            self.ensure_video_extension()
+        
+        # 議事録が.gdocの場合は.docxに変換
+        original_gdoc_path = None
+        if self.transcript_path and self.transcript_path.suffix.lower() == '.gdoc':
+            logger.info(f"議事録を.docxに変換中: {self.transcript_path}")
+            original_gdoc_path = self.transcript_path
+            
+            # 議事録を変換
+            docx_path = self.convert_transcript_to_docx()
+            
+            if not docx_path:
+                logger.error("議事録の変換に失敗しました。")
+                success = False
+        
+        # 移動するファイルのリストを作成
         files_to_move = []
         
         if self.video_path:
@@ -103,6 +162,7 @@ class RecordingSet:
         if self.chat_path:
             files_to_move.append(("チャット", self.chat_path))
         
+        # ファイルを移動
         for file_type, source_path in files_to_move:
             try:
                 target_path = date_dir / source_path.name
@@ -111,6 +171,15 @@ class RecordingSet:
             except Exception as e:
                 logger.error(f"{file_type}の移動に失敗: {e}")
                 success = False
+        
+        # 元の.gdocファイルを削除
+        if original_gdoc_path and success:
+            try:
+                logger.info(f"元の.gdocファイルを削除中: {original_gdoc_path}")
+                original_gdoc_path.unlink()
+            except Exception as e:
+                logger.error(f".gdocファイルの削除に失敗: {e}")
+                # ファイルの削除に失敗しても、移動自体は成功とみなす
         
         return success
     
@@ -331,10 +400,28 @@ def main(config: str, verbose: bool):
     # 録画セットを移動
     click.echo(f"\n⏳ {selected_set.prefix} を {dest_name} ({dest_path}) に移動しています...")
     
+    # 録画ファイルに.mp4拡張子がない場合は追加する通知
+    if selected_set.video_path and selected_set.video_path.suffix.lower() != '.mp4':
+        click.echo("🎬 録画ファイルに.mp4拡張子を追加します...")
+    
+    # .gdocファイルがあるか確認
+    has_gdoc = selected_set.transcript_path and selected_set.transcript_path.suffix.lower() == '.gdoc'
+    if has_gdoc:
+        click.echo("📄 議事録(.gdoc)を.docxに変換します...")
+    
     success = selected_set.move_to(dest_path)
     
     if success:
-        click.echo("✅ 移動が完了しました！")
+        has_mp4_added = selected_set.video_path and selected_set.video_path.suffix.lower() == '.mp4'
+        
+        if has_gdoc and has_mp4_added:
+            click.echo("✅ 録画ファイルの拡張子追加、議事録の変換と移動が完了しました！")
+        elif has_gdoc:
+            click.echo("✅ 議事録の変換と移動が完了しました！")
+        elif has_mp4_added:
+            click.echo("✅ 録画ファイルの拡張子追加と移動が完了しました！")
+        else:
+            click.echo("✅ 移動が完了しました！")
     else:
         click.echo("❌ 移動中にエラーが発生しました。詳細はログを確認してください。")
 

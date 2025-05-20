@@ -15,6 +15,9 @@ license = { text = "MIT" }
 dependencies = [
     "click>=8.0.0",
     "tomli>=2.0.0; python_version < '3.11'",
+    "google-api-python-client",
+    "google-auth-httplib2",
+    "google-auth-oauthlib",
 ]
 
 [project.scripts]
