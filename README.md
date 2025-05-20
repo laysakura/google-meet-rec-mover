@@ -55,6 +55,22 @@ personal = "~/Documents/MeetRecordings"
 work = "~/Work/Meetings"
 ```
 
+## Google API 認証設定
+
+このツールはGoogle Drive APIを使用するため、認証情報が必要です。
+
+### credentials.jsonについて
+
+リポジトリには暗号化された `credentials.json.gpg` ファイルが含まれています。
+使用前に以下のコマンドで復号化してください：
+
+```bash
+gpg --quiet --batch --yes --decrypt --passphrase="$YOUR_PASSWORD" \
+--output credentials.json credentials.json.gpg
+```
+
+環境変数 `YOUR_PASSWORD` にパスフレーズを設定してから実行してください。
+
 ## プロジェクト構成
 
 ```
@@ -62,6 +78,8 @@ google-meet-rec-mover/
 ├── pyproject.toml        # プロジェクト設定
 ├── install.sh            # インストールスクリプト
 ├── README.md             # このファイル
+├── credentials.json.gpg  # 暗号化されたGoogle API認証情報
+├── credentials.json      # 復号化されたGoogle API認証情報（gitignore対象）
 └── google_meet_rec_mover/
     ├── __init__.py       # パッケージ初期化
     └── cli.py            # CLIツールのメイン実装
